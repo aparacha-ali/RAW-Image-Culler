@@ -27,6 +27,7 @@ class CullerApp:
         self.index = 0
         self._photo = None  # prevent GC of PhotoImage
         self._rotations = {}  # path -> rotation angle (0, 90, 180, 270)
+        self._in_review = False
 
         self._build_ui()
         self._bind_keys()
@@ -99,7 +100,7 @@ class CullerApp:
         self.root.bind("<l>", lambda e: self._rotate(-90))
         self.root.bind("<L>", lambda e: self._rotate(-90))
         self.root.bind("<Return>", lambda e: self._execute_sort())
-        self.root.bind("<Escape>", lambda e: self._quit())
+        self.root.bind("<Escape>", lambda e: self._escape())
 
     def _navigate(self, delta: int):
         new_index = self.index + delta
@@ -180,6 +181,68 @@ class CullerApp:
             text=f"Keep:{summary['keep']}  Del:{summary['delete']}  Unmarked:{summary['unmarked']}"
         )
 
+    def _start_review_deletes(self):
+        """Enter review mode: cycle through delete-marked images only."""
+        self._delete_review_list = [
+            i for i, p in enumerate(self.model.images)
+            if self.model.get_mark(p) == MARK_DELETE
+        ]
+        if not self._delete_review_list:
+            self._finish_sort()
+            return
+
+        self._review_pos = 0
+        self._in_review = True
+
+        # Temporarily rebind keys for review mode
+        self.root.unbind("<Return>")
+        self.root.bind("<Return>", lambda e: self._finish_sort())
+        self.root.bind("<Right>", lambda e: self._review_navigate(1))
+        self.root.bind("<Left>", lambda e: self._review_navigate(-1))
+
+        self.lbl_hints.config(
+            text="K:change to keep  U:unmark  \u2190\u2192:nav deletes  Enter:confirm sort  Esc:cancel"
+        )
+
+        self.index = self._delete_review_list[0]
+        self._show_current()
+
+    def _review_navigate(self, delta: int):
+        new_pos = self._review_pos + delta
+        if 0 <= new_pos < len(self._delete_review_list):
+            self._review_pos = new_pos
+            self.index = self._delete_review_list[self._review_pos]
+            self._show_current()
+
+    def _exit_review(self):
+        """Exit review mode and restore normal key bindings."""
+        self._in_review = False
+        self.root.unbind("<Return>")
+        self.root.unbind("<Right>")
+        self.root.unbind("<Left>")
+        self.root.bind("<Right>", lambda e: self._navigate(1))
+        self.root.bind("<Left>", lambda e: self._navigate(-1))
+        self.root.bind("<Return>", lambda e: self._execute_sort())
+        self.lbl_hints.config(
+            text="K:keep  X:delete  U:clear  Z:undo  R/L:rotate  \u2190\u2192:nav  Enter:sort  Esc:quit"
+        )
+
+    def _finish_sort(self):
+        """Actually execute the sort after review."""
+        self._exit_review()
+        result = execute_sort(self.model.folder, self.model.marks)
+
+        if result["errors"]:
+            error_msg = "\n".join(result["errors"][:20])
+            messagebox.showwarning(
+                "Sort Complete (with errors)",
+                f"Moved {result['moved']} files.\n\nErrors:\n{error_msg}"
+            )
+        else:
+            messagebox.showinfo("Sort Complete", f"Successfully moved {result['moved']} files.")
+
+        self._quit()
+
     def _execute_sort(self):
         summary = self.model.summary()
         if summary["keep"] == 0 and summary["delete"] == 0:
@@ -196,6 +259,17 @@ class CullerApp:
         if not messagebox.askyesno("Confirm Sort", msg):
             return
 
+        if summary["delete"] > 0:
+            review = messagebox.askyesno(
+                "Review Deletes",
+                f"You have {summary['delete']} files marked for deletion.\n\n"
+                "Would you like to review them before sorting?\n\n"
+                "You can change any to Keep or Unmarked during review."
+            )
+            if review:
+                self._start_review_deletes()
+                return
+
         result = execute_sort(self.model.folder, self.model.marks)
 
         if result["errors"]:
@@ -208,6 +282,13 @@ class CullerApp:
             messagebox.showinfo("Sort Complete", f"Successfully moved {result['moved']} files.")
 
         self._quit()
+
+    def _escape(self):
+        if self._in_review:
+            self._exit_review()
+            self._show_current()
+        else:
+            self._quit()
 
     def _quit(self):
         self.loader.shutdown()
