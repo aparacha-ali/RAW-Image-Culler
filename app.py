@@ -123,8 +123,8 @@ class CullerApp:
         else:
             hints = [
                 ("K", "keep"), ("X", "del"), ("U", "clear"), ("Z", "undo"),
-                ("R/L", "rotate"), ("\u2190\u2192", "nav"), ("\u21b5", "sort"),
-                ("Esc", "quit"),
+                ("R/L", "rotate"), ("\u2190\u2192", "nav"), ("G", "go to"),
+                ("\u21b5", "sort"), ("Esc", "quit"),
             ]
 
         bg = COLOR_REVIEW_BG if review else COLOR_STATUS_BG
@@ -157,6 +157,8 @@ class CullerApp:
         self.root.bind("<R>", lambda e: self._rotate(90))
         self.root.bind("<l>", lambda e: self._rotate(-90))
         self.root.bind("<L>", lambda e: self._rotate(-90))
+        self.root.bind("<g>", lambda e: self._jump_to())
+        self.root.bind("<G>", lambda e: self._jump_to())
         self.root.bind("<Return>", lambda e: self._execute_sort())
         self.root.bind("<Escape>", lambda e: self._escape())
 
@@ -165,6 +167,48 @@ class CullerApp:
         if 0 <= new_index < self.model.count:
             self.index = new_index
             self._show_current()
+
+    def _jump_to(self):
+        """Open a small dialog to jump to a specific photo number."""
+        jump_win = tk.Toplevel(self.root)
+        jump_win.title("Go to photo")
+        jump_win.configure(bg=COLOR_STATUS_BG)
+        jump_win.resizable(False, False)
+        jump_win.transient(self.root)
+        jump_win.grab_set()
+
+        tk.Label(
+            jump_win, bg=COLOR_STATUS_BG, fg=COLOR_STATUS_FG,
+            font=("Helvetica", 13),
+            text=f"Jump to photo (1\u2013{self.model.count}):",
+            padx=15, pady=10,
+        ).pack()
+
+        entry = tk.Entry(
+            jump_win, font=("Menlo", 16), width=8, justify=tk.CENTER,
+        )
+        entry.pack(padx=15, pady=10)
+        entry.focus_set()
+
+        def _go(*_args):
+            try:
+                num = int(entry.get())
+                if 1 <= num <= self.model.count:
+                    self.index = num - 1
+                    jump_win.destroy()
+                    self._show_current()
+                    return
+            except ValueError:
+                pass
+            entry.delete(0, tk.END)
+
+        entry.bind("<Return>", _go)
+        jump_win.bind("<Escape>", lambda e: jump_win.destroy())
+
+        jump_win.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - jump_win.winfo_width()) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - jump_win.winfo_height()) // 2
+        jump_win.geometry(f"+{x}+{y}")
 
     def _mark(self, mark):
         path = self.model.images[self.index]
