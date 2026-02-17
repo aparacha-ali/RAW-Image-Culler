@@ -2,7 +2,7 @@
 
 import os
 from typing import Dict, List, Optional, Tuple
-from constants import SUPPORTED_EXTENSIONS, MARK_KEEP, MARK_DELETE, MARK_NONE
+from constants import SUPPORTED_EXTENSIONS, MARK_KEEP, MARK_DELETE, MARK_NONE, KEEP_FOLDER, DELETE_FOLDER
 
 
 class CullerModel:
@@ -10,19 +10,39 @@ class CullerModel:
         self.folder = folder
         self.images: List[str] = []  # full paths
         self.marks: Dict[str, Optional[str]] = {}  # path -> mark
+        self.initial_marks: Dict[str, Optional[str]] = {}  # marks at load time
         self.undo_stack: List[Tuple[str, Optional[str]]] = []  # (path, previous_mark)
         self._scan_folder()
 
     def _scan_folder(self):
-        entries = []
+        # Scan root folder (unmarked files)
+        entries = []  # (full_path, sort_key, mark)
         for name in os.listdir(self.folder):
             ext = os.path.splitext(name)[1].lower()
             if ext in SUPPORTED_EXTENSIONS:
-                entries.append(name)
-        entries.sort(key=str.lower)
-        self.images = [os.path.join(self.folder, n) for n in entries]
-        for path in self.images:
-            self.marks[path] = MARK_NONE
+                entries.append((os.path.join(self.folder, name), name.lower(), MARK_NONE))
+
+        # Scan keep/ subfolder if it exists
+        keep_dir = os.path.join(self.folder, KEEP_FOLDER)
+        if os.path.isdir(keep_dir):
+            for name in os.listdir(keep_dir):
+                ext = os.path.splitext(name)[1].lower()
+                if ext in SUPPORTED_EXTENSIONS:
+                    entries.append((os.path.join(keep_dir, name), name.lower(), MARK_KEEP))
+
+        # Scan delete/ subfolder if it exists
+        delete_dir = os.path.join(self.folder, DELETE_FOLDER)
+        if os.path.isdir(delete_dir):
+            for name in os.listdir(delete_dir):
+                ext = os.path.splitext(name)[1].lower()
+                if ext in SUPPORTED_EXTENSIONS:
+                    entries.append((os.path.join(delete_dir, name), name.lower(), MARK_DELETE))
+
+        entries.sort(key=lambda e: e[1])
+        self.images = [e[0] for e in entries]
+        for path, _, mark in entries:
+            self.marks[path] = mark
+            self.initial_marks[path] = mark
 
     @property
     def count(self) -> int:

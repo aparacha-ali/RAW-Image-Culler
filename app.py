@@ -167,7 +167,13 @@ class CullerApp:
         mark = self.model.get_mark(path)
         summary = self.model.summary()
 
-        self.lbl_position.config(text=f"{self.index + 1}/{self.model.count}")
+        if self._in_review:
+            self.lbl_position.config(
+                text=f"{self._review_pos + 1}/{len(self._delete_review_list)} (review)"
+            )
+        else:
+            self.lbl_position.config(text=f"{self.index + 1}/{self.model.count}")
+
         self.lbl_filename.config(text=filename)
 
         if mark == MARK_KEEP:
@@ -181,11 +187,12 @@ class CullerApp:
             text=f"Keep:{summary['keep']}  Del:{summary['delete']}  Unmarked:{summary['unmarked']}"
         )
 
-    def _start_review_deletes(self):
+    def _start_review_deletes(self, session_only=False):
         """Enter review mode: cycle through delete-marked images only."""
         self._delete_review_list = [
             i for i, p in enumerate(self.model.images)
             if self.model.get_mark(p) == MARK_DELETE
+            and (not session_only or self.model.initial_marks.get(p) != MARK_DELETE)
         ]
         if not self._delete_review_list:
             self._finish_sort()
@@ -260,15 +267,63 @@ class CullerApp:
             return
 
         if summary["delete"] > 0:
-            review = messagebox.askyesno(
-                "Review Deletes",
-                f"You have {summary['delete']} files marked for deletion.\n\n"
-                "Would you like to review them before sorting?\n\n"
-                "You can change any to Keep or Unmarked during review."
+            session_deletes = sum(
+                1 for p in self.model.images
+                if self.model.get_mark(p) == MARK_DELETE
+                and self.model.initial_marks.get(p) != MARK_DELETE
             )
-            if review:
-                self._start_review_deletes()
+
+            if session_deletes > 0 and session_deletes < summary["delete"]:
+                # Mix of session and pre-existing deletes — offer choice
+                review_win = tk.Toplevel(self.root)
+                review_win.title("Review Deletes")
+                review_win.configure(bg=COLOR_STATUS_BG)
+                review_win.resizable(False, False)
+                review_win.transient(self.root)
+                review_win.grab_set()
+
+                tk.Label(
+                    review_win, bg=COLOR_STATUS_BG, fg=COLOR_STATUS_FG,
+                    font=("Helvetica", 13),
+                    text=(
+                        f"You have {summary['delete']} total files marked for deletion:\n"
+                        f"  {session_deletes} marked this session\n"
+                        f"  {summary['delete'] - session_deletes} from a previous session\n\n"
+                        "What would you like to review?"
+                    ),
+                    justify=tk.LEFT, padx=20, pady=15,
+                ).pack()
+
+                btn_frame = tk.Frame(review_win, bg=COLOR_STATUS_BG)
+                btn_frame.pack(pady=(0, 15))
+
+                def _review(session_only):
+                    review_win.destroy()
+                    self._start_review_deletes(session_only=session_only)
+
+                tk.Button(btn_frame, text=f"This session only ({session_deletes})",
+                          command=lambda: _review(True), width=25).pack(pady=3)
+                tk.Button(btn_frame, text=f"All deletes ({summary['delete']})",
+                          command=lambda: _review(False), width=25).pack(pady=3)
+                tk.Button(btn_frame, text="Skip review",
+                          command=lambda: (review_win.destroy(), self._finish_sort()),
+                          width=25).pack(pady=3)
+
+                review_win.update_idletasks()
+                x = self.root.winfo_x() + (self.root.winfo_width() - review_win.winfo_width()) // 2
+                y = self.root.winfo_y() + (self.root.winfo_height() - review_win.winfo_height()) // 2
+                review_win.geometry(f"+{x}+{y}")
                 return
+            else:
+                review = messagebox.askyesno(
+                    "Review Deletes",
+                    f"You have {summary['delete']} files marked for deletion.\n\n"
+                    "Would you like to review them before sorting?\n\n"
+                    "You can change any to Keep or Unmarked during review."
+                )
+                if review:
+                    self._start_review_deletes()
+                    return
 
         result = execute_sort(self.model.folder, self.model.marks)
 

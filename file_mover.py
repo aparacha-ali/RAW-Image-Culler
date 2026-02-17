@@ -23,6 +23,8 @@ def _unique_dest(dest_path: str) -> str:
 def execute_sort(folder: str, marks: Dict[str, Optional[str]]) -> dict:
     """
     Move marked files into keep/ and delete/ subfolders.
+    Files already in the correct subfolder are skipped.
+    Unmarked files in subfolders are moved back to the root.
     Returns {"moved": int, "errors": list[str]}.
     """
     keep_dir = os.path.join(folder, KEEP_FOLDER)
@@ -34,11 +36,21 @@ def execute_sort(folder: str, marks: Dict[str, Optional[str]]) -> dict:
     errors = []
 
     for path, mark in marks.items():
+        current_dir = os.path.dirname(path)
+
         if mark == MARK_KEEP:
             dest_dir = keep_dir
         elif mark == MARK_DELETE:
             dest_dir = delete_dir
         else:
+            # Unmarked: move back to root if currently in a subfolder
+            if current_dir in (keep_dir, delete_dir):
+                dest_dir = folder
+            else:
+                continue
+
+        # Skip if already in the correct folder
+        if current_dir == dest_dir:
             continue
 
         filename = os.path.basename(path)
