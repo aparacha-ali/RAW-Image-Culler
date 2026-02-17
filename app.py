@@ -8,7 +8,11 @@ from PIL import ImageTk
 from constants import (
     MARK_KEEP, MARK_DELETE, MARK_NONE,
     COLOR_BG, COLOR_KEEP, COLOR_DELETE, COLOR_UNMARKED,
-    COLOR_STATUS_BG, COLOR_STATUS_FG, COLOR_FILENAME,
+    COLOR_STATUS_BG, COLOR_STATUS_FG, COLOR_FILENAME, COLOR_POSITION,
+    COLOR_KEEP_PILL_BG, COLOR_DELETE_PILL_BG, COLOR_UNMARKED_PILL_BG,
+    COLOR_HINT_KEY_BG, COLOR_HINT_KEY_FG,
+    COLOR_REVIEW_BG, COLOR_REVIEW_ACCENT,
+    COLOR_OVERLAY_KEEP, COLOR_OVERLAY_DELETE, OVERLAY_FLASH_MS,
     STATUS_BAR_HEIGHT,
 )
 from culler_model import CullerModel
@@ -23,11 +27,13 @@ class CullerApp:
             messagebox.showerror("No Images", f"No supported RAW files found in:\n{folder}")
             return
 
+        self.folder_name = os.path.basename(folder)
         self.loader = ImageLoader(self.model.images)
         self.index = 0
         self._photo = None  # prevent GC of PhotoImage
         self._rotations = {}  # path -> rotation angle (0, 90, 180, 270)
         self._in_review = False
+        self._flash_id = None  # for cancelling pending flash clear
 
         self._build_ui()
         self._bind_keys()
@@ -50,39 +56,91 @@ class CullerApp:
         self.status_frame.pack(fill=tk.X, side=tk.BOTTOM)
         self.status_frame.pack_propagate(False)
 
-        # Status labels
+        # Thin accent line above status bar
+        self.accent_line = tk.Frame(self.root, bg="#27272a", height=1)
+        self.accent_line.pack(fill=tk.X, side=tk.BOTTOM)
+
+        # Left section: position counter
+        left_frame = tk.Frame(self.status_frame, bg=COLOR_STATUS_BG)
+        left_frame.pack(side=tk.LEFT, padx=(12, 0))
+
         self.lbl_position = tk.Label(
-            self.status_frame, text="", bg=COLOR_STATUS_BG, fg=COLOR_STATUS_FG,
-            font=("Helvetica", 14, "bold"), padx=10,
+            left_frame, text="", bg=COLOR_STATUS_BG, fg=COLOR_POSITION,
+            font=("Helvetica", 16, "bold"),
         )
         self.lbl_position.pack(side=tk.LEFT)
 
-        self.lbl_mark = tk.Label(
-            self.status_frame, text="", bg=COLOR_STATUS_BG,
-            font=("Helvetica", 14, "bold"), padx=10,
-        )
-        self.lbl_mark.pack(side=tk.LEFT)
+        # Separator
+        sep1 = tk.Frame(self.status_frame, bg="#3f3f46", width=1)
+        sep1.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=8)
 
+        # Mark pill badge
+        self.mark_pill = tk.Label(
+            self.status_frame, text="", font=("Helvetica", 11, "bold"),
+            padx=10, pady=2,
+        )
+        self.mark_pill.pack(side=tk.LEFT, padx=(0, 8))
+
+        # Filename
         self.lbl_filename = tk.Label(
             self.status_frame, text="", bg=COLOR_STATUS_BG, fg=COLOR_FILENAME,
-            font=("Helvetica", 12), padx=10,
+            font=("Helvetica", 12),
         )
-        self.lbl_filename.pack(side=tk.LEFT)
+        self.lbl_filename.pack(side=tk.LEFT, padx=4)
 
-        self.lbl_hints = tk.Label(
-            self.status_frame, text="K:keep  X:delete  U:clear  Z:undo  R/L:rotate  \u2190\u2192:nav  Enter:sort  Esc:quit",
-            bg=COLOR_STATUS_BG, fg="#666666", font=("Helvetica", 11), padx=10,
-        )
-        self.lbl_hints.pack(side=tk.RIGHT)
+        # Right section: hints and summary
+        right_frame = tk.Frame(self.status_frame, bg=COLOR_STATUS_BG)
+        right_frame.pack(side=tk.RIGHT, padx=(0, 12))
+
+        self.hints_frame = tk.Frame(right_frame, bg=COLOR_STATUS_BG)
+        self.hints_frame.pack(side=tk.RIGHT)
+
+        # Separator before summary
+        sep2 = tk.Frame(self.status_frame, bg="#3f3f46", width=1)
+        sep2.pack(side=tk.RIGHT, fill=tk.Y, padx=10, pady=8)
 
         self.lbl_summary = tk.Label(
             self.status_frame, text="", bg=COLOR_STATUS_BG, fg=COLOR_STATUS_FG,
-            font=("Helvetica", 12), padx=10,
+            font=("Helvetica", 12),
         )
         self.lbl_summary.pack(side=tk.RIGHT)
 
+        self._build_hints()
+
         # Handle resize
         self.canvas.bind("<Configure>", lambda e: self._show_current())
+
+    def _build_hints(self, review=False):
+        """Build pill-shaped keyboard hint badges."""
+        for w in self.hints_frame.winfo_children():
+            w.destroy()
+
+        if review:
+            hints = [
+                ("K", "keep"), ("U", "unmark"), ("\u2190\u2192", "nav"),
+                ("\u21b5", "sort"), ("Esc", "cancel"),
+            ]
+        else:
+            hints = [
+                ("K", "keep"), ("X", "del"), ("U", "clear"), ("Z", "undo"),
+                ("R/L", "rotate"), ("\u2190\u2192", "nav"), ("\u21b5", "sort"),
+                ("Esc", "quit"),
+            ]
+
+        bg = COLOR_REVIEW_BG if review else COLOR_STATUS_BG
+
+        for i, (key, label) in enumerate(hints):
+            pill = tk.Frame(self.hints_frame, bg=bg)
+            pill.pack(side=tk.LEFT, padx=2)
+
+            tk.Label(
+                pill, text=f" {key} ", bg=COLOR_HINT_KEY_BG, fg=COLOR_HINT_KEY_FG,
+                font=("Menlo", 10, "bold"), padx=2, pady=1,
+            ).pack(side=tk.LEFT)
+            tk.Label(
+                pill, text=label, bg=bg, fg="#52525b",
+                font=("Helvetica", 10), padx=3,
+            ).pack(side=tk.LEFT)
 
     def _bind_keys(self):
         self.root.bind("<Right>", lambda e: self._navigate(1))
@@ -115,10 +173,49 @@ class CullerApp:
             self._update_status()
         else:
             self.model.set_mark(path, mark)
-            # Auto-advance
+            self._flash_overlay(mark)
+            # Auto-advance after a brief moment
             if self.index < self.model.count - 1:
                 self.index += 1
             self._show_current()
+
+    def _flash_overlay(self, mark):
+        """Show a brief overlay label on the canvas indicating the mark."""
+        if self._flash_id:
+            self.root.after_cancel(self._flash_id)
+            self.canvas.delete("overlay")
+
+        text = "KEEP" if mark == MARK_KEEP else "DELETE"
+        color = COLOR_OVERLAY_KEEP if mark == MARK_KEEP else COLOR_OVERLAY_DELETE
+
+        cw = self.canvas.winfo_width()
+        ch = self.canvas.winfo_height()
+
+        # Semi-transparent background rectangle
+        pad_x, pad_y = 60, 20
+        font = ("Helvetica", 48, "bold")
+        text_id = self.canvas.create_text(
+            cw // 2, ch // 2, text=text, fill=color,
+            font=font, tags="overlay",
+        )
+        bbox = self.canvas.bbox(text_id)
+        if bbox:
+            self.canvas.create_rectangle(
+                bbox[0] - pad_x, bbox[1] - pad_y,
+                bbox[2] + pad_x, bbox[3] + pad_y,
+                fill="#000000", outline=color, width=2,
+                stipple="gray50", tags="overlay",
+            )
+            # Re-draw text on top of rectangle
+            self.canvas.delete(text_id)
+            self.canvas.create_text(
+                cw // 2, ch // 2, text=text, fill=color,
+                font=font, tags="overlay",
+            )
+
+        self._flash_id = self.root.after(
+            OVERLAY_FLASH_MS, lambda: self.canvas.delete("overlay")
+        )
 
     def _undo(self):
         restored_path = self.model.undo()
@@ -167,25 +264,56 @@ class CullerApp:
         mark = self.model.get_mark(path)
         summary = self.model.summary()
 
+        # Position counter
         if self._in_review:
-            self.lbl_position.config(
-                text=f"{self._review_pos + 1}/{len(self._delete_review_list)} (review)"
-            )
+            pos_text = f"{self._review_pos + 1}/{len(self._delete_review_list)}"
+            self.lbl_position.config(text=pos_text, fg=COLOR_REVIEW_ACCENT)
         else:
-            self.lbl_position.config(text=f"{self.index + 1}/{self.model.count}")
+            pos_text = f"{self.index + 1}/{self.model.count}"
+            self.lbl_position.config(text=pos_text, fg=COLOR_POSITION)
 
         self.lbl_filename.config(text=filename)
 
+        # Mark pill badge
         if mark == MARK_KEEP:
-            self.lbl_mark.config(text="KEEP", fg=COLOR_KEEP)
+            self.mark_pill.config(
+                text=" KEEP ", fg=COLOR_KEEP, bg=COLOR_KEEP_PILL_BG,
+            )
         elif mark == MARK_DELETE:
-            self.lbl_mark.config(text="DELETE", fg=COLOR_DELETE)
+            self.mark_pill.config(
+                text=" DELETE ", fg=COLOR_DELETE, bg=COLOR_DELETE_PILL_BG,
+            )
         else:
-            self.lbl_mark.config(text="UNMARKED", fg=COLOR_UNMARKED)
+            self.mark_pill.config(
+                text=" UNMARKED ", fg=COLOR_UNMARKED, bg=COLOR_UNMARKED_PILL_BG,
+            )
 
+        # Summary with colored counts
         self.lbl_summary.config(
             text=f"Keep:{summary['keep']}  Del:{summary['delete']}  Unmarked:{summary['unmarked']}"
         )
+
+        # Window title
+        mode = " [REVIEW]" if self._in_review else ""
+        self.root.title(
+            f"RAW Culler \u2014 {self.folder_name} ({pos_text}){mode}"
+        )
+
+    def _set_review_theme(self, active: bool):
+        """Switch status bar between normal and review mode styling."""
+        bg = COLOR_REVIEW_BG if active else COLOR_STATUS_BG
+        accent = COLOR_REVIEW_ACCENT if active else "#27272a"
+
+        self.status_frame.config(bg=bg)
+        self.accent_line.config(bg=accent)
+        self.lbl_position.master.config(bg=bg)
+        self.lbl_position.config(bg=bg)
+        self.lbl_filename.config(bg=bg)
+        self.lbl_summary.config(bg=bg)
+        self.mark_pill.master.config(bg=bg)
+
+        # Update hint pill backgrounds
+        self._build_hints(review=active)
 
     def _start_review_deletes(self, session_only=False):
         """Enter review mode: cycle through delete-marked images only."""
@@ -200,16 +328,13 @@ class CullerApp:
 
         self._review_pos = 0
         self._in_review = True
+        self._set_review_theme(True)
 
         # Temporarily rebind keys for review mode
         self.root.unbind("<Return>")
         self.root.bind("<Return>", lambda e: self._finish_sort())
         self.root.bind("<Right>", lambda e: self._review_navigate(1))
         self.root.bind("<Left>", lambda e: self._review_navigate(-1))
-
-        self.lbl_hints.config(
-            text="K:change to keep  U:unmark  \u2190\u2192:nav deletes  Enter:confirm sort  Esc:cancel"
-        )
 
         self.index = self._delete_review_list[0]
         self._show_current()
@@ -224,15 +349,13 @@ class CullerApp:
     def _exit_review(self):
         """Exit review mode and restore normal key bindings."""
         self._in_review = False
+        self._set_review_theme(False)
         self.root.unbind("<Return>")
         self.root.unbind("<Right>")
         self.root.unbind("<Left>")
         self.root.bind("<Right>", lambda e: self._navigate(1))
         self.root.bind("<Left>", lambda e: self._navigate(-1))
         self.root.bind("<Return>", lambda e: self._execute_sort())
-        self.lbl_hints.config(
-            text="K:keep  X:delete  U:clear  Z:undo  R/L:rotate  \u2190\u2192:nav  Enter:sort  Esc:quit"
-        )
 
     def _finish_sort(self):
         """Actually execute the sort after review."""
