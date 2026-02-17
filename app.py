@@ -26,6 +26,7 @@ class CullerApp:
         self.loader = ImageLoader(self.model.images)
         self.index = 0
         self._photo = None  # prevent GC of PhotoImage
+        self._rotations = {}  # path -> rotation angle (0, 90, 180, 270)
 
         self._build_ui()
         self._bind_keys()
@@ -68,7 +69,7 @@ class CullerApp:
         self.lbl_filename.pack(side=tk.LEFT)
 
         self.lbl_hints = tk.Label(
-            self.status_frame, text="K:keep  X:delete  U:clear  Z:undo  \u2190\u2192:nav  Enter:sort  Esc:quit",
+            self.status_frame, text="K:keep  X:delete  U:clear  Z:undo  R/L:rotate  \u2190\u2192:nav  Enter:sort  Esc:quit",
             bg=COLOR_STATUS_BG, fg="#666666", font=("Helvetica", 11), padx=10,
         )
         self.lbl_hints.pack(side=tk.RIGHT)
@@ -93,6 +94,10 @@ class CullerApp:
         self.root.bind("<U>", lambda e: self._mark(MARK_NONE))
         self.root.bind("<z>", lambda e: self._undo())
         self.root.bind("<Z>", lambda e: self._undo())
+        self.root.bind("<r>", lambda e: self._rotate(90))
+        self.root.bind("<R>", lambda e: self._rotate(90))
+        self.root.bind("<l>", lambda e: self._rotate(-90))
+        self.root.bind("<L>", lambda e: self._rotate(-90))
         self.root.bind("<Return>", lambda e: self._execute_sort())
         self.root.bind("<Escape>", lambda e: self._quit())
 
@@ -120,10 +125,22 @@ class CullerApp:
             self.index = self.model.images.index(restored_path)
             self._show_current()
 
+    def _rotate(self, degrees: int):
+        path = self.model.images[self.index]
+        current = self._rotations.get(path, 0)
+        self._rotations[path] = (current + degrees) % 360
+        self._show_current()
+
     def _show_current(self):
         if self.model.count == 0:
             return
         img = self.loader.get(self.index)
+
+        # Apply rotation if any
+        path = self.model.images[self.index]
+        rotation = self._rotations.get(path, 0)
+        if rotation:
+            img = img.rotate(-rotation, expand=True)  # negative because PIL rotates CCW
 
         # Fit image to canvas
         cw = self.canvas.winfo_width()
