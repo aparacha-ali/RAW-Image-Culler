@@ -11,7 +11,7 @@ import threading
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from constants import CACHE_SIZE, THREAD_POOL_WORKERS, PRELOAD_AHEAD, PRELOAD_BEHIND
 
@@ -32,6 +32,7 @@ def _extract_preview(path: str) -> Image.Image:
             img = Image.open(tmp_path)
             img.load()  # force read before we delete the temp file
             os.unlink(tmp_path)
+            img = ImageOps.exif_transpose(img)
             return img
     except Exception:
         pass
