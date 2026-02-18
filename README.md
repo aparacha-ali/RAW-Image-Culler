@@ -51,6 +51,7 @@ python main.py
 | `Z` | Undo last mark |
 | `R` | Rotate 90° clockwise |
 | `L` | Rotate 90° counter-clockwise |
+| `N` | Jump to first unmarked photo |
 | `←` `→` | Navigate between images |
 | `Enter` | Execute sort (with confirmation) |
 | `Esc` | Quit (or cancel review mode) |

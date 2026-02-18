@@ -124,7 +124,7 @@ class CullerApp:
             hints = [
                 ("K", "keep"), ("X", "del"), ("U", "clear"), ("Z", "undo"),
                 ("R/L", "rotate"), ("\u2190\u2192", "nav"), ("G", "go to"),
-                ("\u21b5", "sort"), ("Esc", "quit"),
+                ("N", "unmarked"), ("\u21b5", "sort"), ("Esc", "quit"),
             ]
 
         bg = COLOR_REVIEW_BG if review else COLOR_STATUS_BG
@@ -159,6 +159,8 @@ class CullerApp:
         self.root.bind("<L>", lambda e: self._rotate(-90))
         self.root.bind("<g>", lambda e: self._jump_to())
         self.root.bind("<G>", lambda e: self._jump_to())
+        self.root.bind("<n>", lambda e: self._jump_to_unmarked())
+        self.root.bind("<N>", lambda e: self._jump_to_unmarked())
         self.root.bind("<Return>", lambda e: self._execute_sort())
         self.root.bind("<Escape>", lambda e: self._escape())
 
@@ -209,6 +211,16 @@ class CullerApp:
         x = self.root.winfo_x() + (self.root.winfo_width() - jump_win.winfo_width()) // 2
         y = self.root.winfo_y() + (self.root.winfo_height() - jump_win.winfo_height()) // 2
         jump_win.geometry(f"+{x}+{y}")
+
+    def _jump_to_unmarked(self):
+        """Jump to the first unmarked photo starting from current position."""
+        idx = self.model.first_unmarked(self.index)
+        if idx is None:
+            # Wrap around: search from the beginning
+            idx = self.model.first_unmarked(0)
+        if idx is not None:
+            self.index = idx
+            self._show_current()
 
     def _mark(self, mark):
         path = self.model.images[self.index]

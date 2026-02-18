@@ -64,6 +64,13 @@ class CullerModel:
         self.marks[path] = prev_mark
         return path
 
+    def first_unmarked(self, start: int = 0) -> Optional[int]:
+        """Return index of the first unmarked image at or after start, or None."""
+        for i in range(start, self.count):
+            if self.marks.get(self.images[i], MARK_NONE) == MARK_NONE:
+                return i
+        return None
+
     def summary(self) -> dict:
         keeps = sum(1 for m in self.marks.values() if m == MARK_KEEP)
         deletes = sum(1 for m in self.marks.values() if m == MARK_DELETE)
