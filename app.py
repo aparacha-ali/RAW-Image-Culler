@@ -1,6 +1,7 @@
 """Tkinter window, layout, key bindings, and display loop."""
 
 import os
+import subprocess
 import tkinter as tk
 from tkinter import messagebox
 from PIL import ImageTk
@@ -139,7 +140,7 @@ class CullerApp:
             hints = [
                 ("K", "keep"), ("X", "del"), ("U", "clear"), ("Z", "undo"),
                 ("R/L", "rotate"), ("\u2190\u2192", "nav"), ("G", "go to"),
-                ("N", "unmarked"), ("\u21b5", "sort"), ("Esc", "quit"),
+                ("N", "unmarked"), ("P", "preview"), ("\u21b5", "sort"), ("Esc", "quit"),
             ]
 
         bg = COLOR_REVIEW_BG if review else COLOR_STATUS_BG
@@ -178,6 +179,8 @@ class CullerApp:
         self.root.bind("<N>", lambda e: self._jump_to_unmarked())
         self.root.bind("<Return>", lambda e: self._execute_sort())
         self.root.bind("<Escape>", lambda e: self._escape())
+        self.root.bind("<p>", lambda e: self._open_in_preview())
+        self.root.bind("<P>", lambda e: self._open_in_preview())
 
     def _navigate(self, delta: int):
         new_index = self.index + delta
@@ -539,6 +542,10 @@ class CullerApp:
             messagebox.showinfo("Sort Complete", f"Successfully moved {total} files.")
 
         self._quit()
+
+    def _open_in_preview(self):
+        path = self.model.images[self.index]
+        subprocess.Popen(["open", "-a", "Preview", path])
 
     def _escape(self):
         if self._in_review:
