@@ -11,6 +11,7 @@ A fast, keyboard-driven desktop tool for reviewing and sorting large batches of 
 - **Re-processable** — Run again on the same folder to review previous decisions and change marks
 - **Session tracking** — Distinguishes between marks made this session vs. previous sessions during delete review
 - **Image rotation** — Rotate images for proper viewing (display-only, doesn't modify files)
+- **XMP sidecar detection** — Files with a companion `.xmp` sidecar are considered already-edited and automatically moved to `keep/` without appearing in the culler
 
 ## Supported RAW Formats
 
@@ -51,7 +52,9 @@ python main.py
 | `Z` | Undo last mark |
 | `R` | Rotate 90° clockwise |
 | `L` | Rotate 90° counter-clockwise |
+| `G` | Jump to a specific photo number |
 | `N` | Jump to first unmarked photo |
+| `P` | Open current image in macOS Preview |
 | `←` `→` | Navigate between images |
 | `Enter` | Execute sort (with confirmation) |
 | `Esc` | Quit (or cancel review mode) |
