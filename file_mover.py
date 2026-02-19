@@ -20,12 +20,17 @@ def _unique_dest(dest_path: str) -> str:
         counter += 1
 
 
-def execute_sort(folder: str, marks: Dict[str, Optional[str]]) -> dict:
+def execute_sort(
+    folder: str,
+    marks: Dict[str, Optional[str]],
+    pre_edited: Optional[Dict[str, str]] = None,
+) -> dict:
     """
     Move marked files into keep/ and delete/ subfolders.
     Files already in the correct subfolder are skipped.
     Unmarked files in subfolders are moved back to the root.
-    Returns {"moved": int, "errors": list[str]}.
+    Pre-edited files (RAW + XMP pairs) are moved to keep/.
+    Returns {"moved": int, "pre_edited_moved": int, "errors": list[str]}.
     """
     keep_dir = os.path.join(folder, KEEP_FOLDER)
     delete_dir = os.path.join(folder, DELETE_FOLDER)
@@ -33,6 +38,7 @@ def execute_sort(folder: str, marks: Dict[str, Optional[str]]) -> dict:
     os.makedirs(delete_dir, exist_ok=True)
 
     moved = 0
+    pre_edited_moved = 0
     errors = []
 
     for path, mark in marks.items():
@@ -61,4 +67,15 @@ def execute_sort(folder: str, marks: Dict[str, Optional[str]]) -> dict:
         except Exception as e:
             errors.append(f"{filename}: {e}")
 
-    return {"moved": moved, "errors": errors}
+    # Move pre-edited files (RAW + XMP sidecar) to keep/
+    for raw_path, xmp_path in (pre_edited or {}).items():
+        for src in (raw_path, xmp_path):
+            filename = os.path.basename(src)
+            dest = _unique_dest(os.path.join(keep_dir, filename))
+            try:
+                shutil.move(src, dest)
+                pre_edited_moved += 1
+            except Exception as e:
+                errors.append(f"{filename}: {e}")
+
+    return {"moved": moved, "pre_edited_moved": pre_edited_moved, "errors": errors}

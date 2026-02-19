@@ -5,6 +5,15 @@ from typing import Dict, List, Optional, Tuple
 from constants import SUPPORTED_EXTENSIONS, MARK_KEEP, MARK_DELETE, MARK_NONE, KEEP_FOLDER, DELETE_FOLDER
 
 
+def _find_xmp(raw_path: str) -> Optional[str]:
+    """Return the XMP sidecar path if one exists alongside the RAW file, else None."""
+    base = os.path.splitext(raw_path)[0]
+    for candidate in (base + ".xmp", base + ".XMP", raw_path + ".xmp", raw_path + ".XMP"):
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
 class CullerModel:
     def __init__(self, folder: str):
         self.folder = folder
@@ -12,15 +21,21 @@ class CullerModel:
         self.marks: Dict[str, Optional[str]] = {}  # path -> mark
         self.initial_marks: Dict[str, Optional[str]] = {}  # marks at load time
         self.undo_stack: List[Tuple[str, Optional[str]]] = []  # (path, previous_mark)
+        self.pre_edited: Dict[str, str] = {}  # raw_path -> xmp_path (auto-keep)
         self._scan_folder()
 
     def _scan_folder(self):
-        # Scan root folder (unmarked files)
+        # Scan root folder (unmarked files), skipping any with XMP sidecars
         entries = []  # (full_path, sort_key, mark)
         for name in os.listdir(self.folder):
             ext = os.path.splitext(name)[1].lower()
             if ext in SUPPORTED_EXTENSIONS:
-                entries.append((os.path.join(self.folder, name), name.lower(), MARK_NONE))
+                raw_path = os.path.join(self.folder, name)
+                xmp_path = _find_xmp(raw_path)
+                if xmp_path:
+                    self.pre_edited[raw_path] = xmp_path
+                else:
+                    entries.append((raw_path, name.lower(), MARK_NONE))
 
         # Scan keep/ subfolder if it exists
         keep_dir = os.path.join(self.folder, KEEP_FOLDER)

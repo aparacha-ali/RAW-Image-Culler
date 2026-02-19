@@ -38,6 +38,21 @@ class CullerApp:
         self._build_ui()
         self._bind_keys()
         self._show_current()
+
+        # Notify the user about pre-edited files that will be auto-kept
+        if self.model.pre_edited:
+            count = len(self.model.pre_edited)
+            self.root.after(
+                100,
+                lambda: messagebox.showinfo(
+                    "Pre-edited Files Detected",
+                    f"{count} file{'s' if count != 1 else ''} with XMP sidecars "
+                    f"{'were' if count != 1 else 'was'} found and will be automatically "
+                    f"moved to keep/ when you sort.\n\n"
+                    f"These files are not shown in the culler."
+                )
+            )
+
         self.root.mainloop()
 
     def _build_ui(self):
@@ -416,16 +431,17 @@ class CullerApp:
     def _finish_sort(self):
         """Actually execute the sort after review."""
         self._exit_review()
-        result = execute_sort(self.model.folder, self.model.marks)
+        result = execute_sort(self.model.folder, self.model.marks, self.model.pre_edited)
 
+        total = result["moved"] + result["pre_edited_moved"]
         if result["errors"]:
             error_msg = "\n".join(result["errors"][:20])
             messagebox.showwarning(
                 "Sort Complete (with errors)",
-                f"Moved {result['moved']} files.\n\nErrors:\n{error_msg}"
+                f"Moved {total} files.\n\nErrors:\n{error_msg}"
             )
         else:
-            messagebox.showinfo("Sort Complete", f"Successfully moved {result['moved']} files.")
+            messagebox.showinfo("Sort Complete", f"Successfully moved {total} files.")
 
         self._quit()
 
@@ -435,11 +451,17 @@ class CullerApp:
             messagebox.showinfo("Nothing to sort", "No images have been marked yet.")
             return
 
+        pre_edited_count = len(self.model.pre_edited)
+        pre_edited_line = (
+            f"  PRE-EDITED: {pre_edited_count} files (+ XMP) \u2192 keep/\n"
+            if pre_edited_count else ""
+        )
         msg = (
             f"Move files?\n\n"
             f"  KEEP:     {summary['keep']} files \u2192 keep/\n"
             f"  DELETE:   {summary['delete']} files \u2192 delete/\n"
-            f"  UNMARKED: {summary['unmarked']} files (stay in place)\n\n"
+            f"  UNMARKED: {summary['unmarked']} files (stay in place)\n"
+            f"{pre_edited_line}\n"
             f"This will move the files. Continue?"
         )
         if not messagebox.askyesno("Confirm Sort", msg):
@@ -504,16 +526,17 @@ class CullerApp:
                     self._start_review_deletes()
                     return
 
-        result = execute_sort(self.model.folder, self.model.marks)
+        result = execute_sort(self.model.folder, self.model.marks, self.model.pre_edited)
 
+        total = result["moved"] + result["pre_edited_moved"]
         if result["errors"]:
             error_msg = "\n".join(result["errors"][:20])
             messagebox.showwarning(
                 "Sort Complete (with errors)",
-                f"Moved {result['moved']} files.\n\nErrors:\n{error_msg}"
+                f"Moved {total} files.\n\nErrors:\n{error_msg}"
             )
         else:
-            messagebox.showinfo("Sort Complete", f"Successfully moved {result['moved']} files.")
+            messagebox.showinfo("Sort Complete", f"Successfully moved {total} files.")
 
         self._quit()
 
